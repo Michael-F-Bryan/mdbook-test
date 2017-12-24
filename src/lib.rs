@@ -1,6 +1,5 @@
 extern crate failure;
 extern crate mdbook;
-#[macro_use]
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
@@ -49,8 +48,7 @@ pub fn test(ctx: &RenderContext) -> Result<(), Error> {
 
     create_crate(crate_dir, crate_name)?;
     copy_across_book_chapters(&ctx.book, crate_dir)?;
-    generate_build_rs(&ctx.book, &cfg, crate_dir)?;
-
+    generate_configuration(&cfg, crate_dir)?;
     compile_and_test(crate_dir)?;
 
     Ok(())
@@ -59,6 +57,8 @@ pub fn test(ctx: &RenderContext) -> Result<(), Error> {
 fn create_crate(dir: &Path, name: &str) -> Result<(), Error> {
     let status = Command::new("cargo")
         .arg("init")
+        .arg("--lib")
+        .arg("--quiet")
         .arg("--name")
         .arg(name)
         .arg(dir)
@@ -98,16 +98,34 @@ fn copy_across_book_chapters(book: &Book, dir: &Path) -> Result<(), Error> {
 
 /// Generates the `build.rs` build script and adds the dependencies to
 /// `Cargo.toml`.
-fn generate_build_rs(book: &Book, cfg: &Config, dir: &Path) -> Result<(), Error> {
+fn generate_configuration(cfg: &Config, dir: &Path) -> Result<(), Error> {
     let cargo_toml_path = dir.join("Cargo.toml");
 
     let cargo_toml = load_toml(&cargo_toml_path)?;
     let updated_cargo_toml = update_cargo_toml(cargo_toml, &cfg.dependencies)?;
     dump_toml(&updated_cargo_toml, &cargo_toml_path)?;
 
-    // TODO: Generate the build.rs
-    unimplemented!()
-    // Ok(())
+    build_rs(cfg, dir.join("build.rs"))
+        .context("Unable to generate build.rs")?;
+
+    Ok(())
+}
+
+fn build_rs<P: AsRef<Path>>(cfg: &Config, filename: P) -> Result<(), Error> {
+    let mut f = File::create(filename)?;
+
+    let template = include_str!("build_template.rs");
+
+    let dependency_list = cfg.dependencies.iter()
+        .map(|dep| format!("\"{}\"", dep))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let content = template.replace("$DEPS", &dependency_list);
+
+    f.write_all(content.as_bytes())?;
+    
+    Ok(())
 }
 
 fn dump_toml<P: AsRef<Path>, S: Serialize>(thing: &S, filename: P) -> Result<(), Error> {
@@ -142,6 +160,13 @@ fn update_cargo_toml(mut value: Table, deps: &[String]) -> Result<Value, Error> 
         .expect("unreachable")
         .insert(String::from("build"), "build.rs".into());
 
+    value
+        .entry("build-dependencies".to_string())
+        .or_insert_with(|| Value::Table(Table::new()))
+        .as_table_mut()
+        .expect("unreachable")
+        .insert(String::from("skeptic"), "*".into());
+
     {
         let deps_table = value
             .entry("dependencies".to_string())
@@ -160,6 +185,7 @@ fn update_cargo_toml(mut value: Table, deps: &[String]) -> Result<Value, Error> 
 fn compile_and_test(dir: &Path) -> Result<(), Error> {
     let status = Command::new("cargo")
         .arg("test")
+        .arg("--quiet")
         .current_dir(dir)
         .stdin(Stdio::null())
         .status()
@@ -261,7 +287,8 @@ mod tests {
         }
 
         let cfg = Config {
-            dependencies: vec![String::from("bitflags")],
+            // dependencies: vec![String::from("bitflags")],
+            dependencies: Vec::new(),
         };
 
         macro_rules! unwrap {
@@ -280,15 +307,15 @@ mod tests {
 
         unwrap!(create_crate(temp.path(), "mdbook-test"));
         unwrap!(copy_across_book_chapters(&book, temp.path()));
-        unwrap!(generate_build_rs(&book, &cfg, temp.path()));
+        unwrap!(generate_configuration(&cfg, temp.path()));
         unwrap!(compile_and_test(temp.path()));
 
         let p = temp.path();
         assert!(p.join("Cargo.toml").exists());
         assert!(p.join("build.rs").exists());
 
-        assert!(p.join("first.md").exists());
-        assert!(p.join("second.md").exists());
-        assert!(p.join("nested/third.md").exists());
+        assert!(p.join("src").join("first.md").exists());
+        assert!(p.join("src").join("second.md").exists());
+        assert!(p.join("src").join("nested/third.md").exists());
     }
 }
