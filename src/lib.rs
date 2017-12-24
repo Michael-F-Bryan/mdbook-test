@@ -13,6 +13,10 @@ use failure::{Error, ResultExt, SyncFailure};
 use mdbook::renderer::RenderContext;
 use mdbook::book::Book;
 
+/// The exact version of `mdbook` this crate is compiled against.
+pub const MDBOOK_VERSION: &'static str = env!("MDBOOK_VERSION");
+
+
 /// Test each of the Rust snippets in a book.
 ///
 /// This works by:
@@ -68,12 +72,25 @@ fn copy_across_book_chapters(book: &Book, dir: &Path) -> Result<(), Error> {
     unimplemented!()
 }
 
+/// Generates the `build.rs` build script and adds the dependencies to 
+/// `Cargo.toml`.
 fn generate_build_rs(book: &Book, cfg: &Config, dir: &Path) -> Result<(), Error> {
     unimplemented!()
 }
 
 fn compile_and_test(dir: &Path) -> Result<(), Error> {
-    unimplemented!()
+    let status = Command::new("cargo")
+        .arg("test")
+        .current_dir(dir)
+        .stdin(Stdio::null())
+        .status()
+        .context("Unable to invoke cargo")?;
+
+    if !status.success() {
+        Err(failure::err_msg("The tests failed"))
+    } else {
+        Ok(())
+    }
 }
 
 /// The configuration struct loaded from the `output.test` table.
