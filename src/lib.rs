@@ -9,12 +9,12 @@ extern crate toml;
 
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{Read, Write};
 use tempdir::TempDir;
 use failure::{Error, ResultExt, SyncFailure};
 use mdbook::renderer::RenderContext;
-use mdbook::book::Book;
+use mdbook::book::{Book, BookItem};
 use toml::value::{Table, Value};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -74,7 +74,26 @@ fn create_crate(dir: &Path, name: &str) -> Result<(), Error> {
 }
 
 fn copy_across_book_chapters(book: &Book, dir: &Path) -> Result<(), Error> {
-    unimplemented!()
+    let src = dir.join("src");
+
+    let chapters = book.sections.iter().filter_map(|b| match *b {
+        BookItem::Chapter(ref ch) => Some(ch),
+        _ => None,
+    });
+
+    for ch in chapters {
+        let filename = src.join(&ch.path);
+
+        if let Some(parent) = filename.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        File::create(filename)
+            .and_then(|mut f| f.write_all(ch.content.as_bytes()))
+            .with_context(|_| format!("Unable to copy across {}", ch.path.display()))?;
+    }
+
+    Ok(())
 }
 
 /// Generates the `build.rs` build script and adds the dependencies to
@@ -86,9 +105,9 @@ fn generate_build_rs(book: &Book, cfg: &Config, dir: &Path) -> Result<(), Error>
     let updated_cargo_toml = update_cargo_toml(cargo_toml, &cfg.dependencies)?;
     dump_toml(&updated_cargo_toml, &cargo_toml_path)?;
 
-
     // TODO: Generate the build.rs
     unimplemented!()
+    // Ok(())
 }
 
 fn dump_toml<P: AsRef<Path>, S: Serialize>(thing: &S, filename: P) -> Result<(), Error> {
@@ -164,6 +183,7 @@ pub struct Config {
 mod tests {
     use super::*;
     use std::collections::HashSet;
+    use mdbook::book::{Book, Chapter};
 
     #[test]
     fn create_the_test_crate() {
@@ -218,5 +238,57 @@ mod tests {
         for dep in &deps {
             assert!(got_deps.contains(dep));
         }
+    }
+
+    fn new_chapter<P: AsRef<Path>>(path: P) -> BookItem {
+        let path = path.as_ref();
+        let filename = path.file_name().and_then(|p| p.to_str()).unwrap();
+
+        let ch = Chapter::new(filename, String::new(), path);
+
+        BookItem::Chapter(ch)
+    }
+
+    #[test]
+    fn test_the_entire_process() {
+        let temp = TempDir::new("mdbook-test").unwrap();
+
+        let chapters = vec!["first.md", "second.md", "nested/third.md"];
+        let mut book = Book::default();
+
+        for ch in &chapters {
+            book.sections.push(new_chapter(ch));
+        }
+
+        let cfg = Config {
+            dependencies: vec![String::from("bitflags")],
+        };
+
+        macro_rules! unwrap {
+            ($thing:expr) => {
+                if let Err(e) = $thing {
+                    println!("Error: {}", e);
+
+                    for cause in e.causes().skip(1) {
+                        println!("\tCaused By: {}", cause);
+                    }
+
+                    panic!();
+                }
+            };
+        }
+
+        unwrap!(create_crate(temp.path(), "mdbook-test"));
+        unwrap!(copy_across_book_chapters(&book, temp.path()));
+        unwrap!(generate_build_rs(&book, &cfg, temp.path()));
+        unwrap!(compile_and_test(temp.path()));
+
+        let p = temp.path();
+        assert!(p.join("Cargo.toml").exists());
+        assert!(p.join("build.rs").exists());
+
+        assert!(p.join("first.md").exists());
+        assert!(p.join("second.md").exists());
+        assert!(p.join("nested/third.md").exists());
     }
 }
