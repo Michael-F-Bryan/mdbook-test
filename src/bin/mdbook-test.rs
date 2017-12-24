@@ -16,7 +16,6 @@ use structopt::StructOpt;
 use mdbook::renderer::RenderContext;
 use mdbook::MDBook;
 
-
 fn main() {
     let args = Args::from_args();
 
@@ -56,6 +55,5 @@ struct Args {
     #[structopt(short = "s", long = "standalone",
                 help = "Run standalone (i.e. not as a mdbook plugin)")]
     standalone: bool,
-    #[structopt(help = "The book to test.", parse(from_os_str), default_value = ".")]
-    root: PathBuf,
+    #[structopt(help = "The book to test.", parse(from_os_str), default_value = ".")] root: PathBuf,
 }
