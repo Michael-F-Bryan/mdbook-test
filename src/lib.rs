@@ -160,7 +160,7 @@ fn build_rs<P: AsRef<Path>>(book: &Book, filename: P) -> Result<(), Error> {
             _ => None,
         })
         .map(|ch| src.join(&ch.path).display().to_string())
-        .map(|ch| format!("\"{}\"", ch))
+        .map(|ch| format!("r\"{}\"", ch))
         .collect::<Vec<_>>()
         .join(", ");
 
