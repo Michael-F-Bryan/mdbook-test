@@ -1,4 +1,5 @@
 extern crate env_logger;
+extern crate tempdir;
 extern crate mdbook;
 extern crate mdbook_test;
 
@@ -7,6 +8,7 @@ use mdbook::renderer::RenderContext;
 use mdbook::book::{Book, BookItem, Chapter};
 use mdbook::config::Config as MdConfig;
 use mdbook_test::Config;
+use tempdir::TempDir;
 
 fn new_chapter<P: AsRef<Path>>(path: P) -> BookItem {
     let path = path.as_ref();
@@ -17,7 +19,9 @@ fn new_chapter<P: AsRef<Path>>(path: P) -> BookItem {
     BookItem::Chapter(ch)
 }
 
-fn create_context() -> RenderContext {
+fn create_context() -> (RenderContext, TempDir) {
+    let temp = TempDir::new("mdbook_test").unwrap();
+
     let chapters = vec!["first.md", "second.md", "nested/third.md"];
     let mut book = Book::default();
 
@@ -38,17 +42,17 @@ fn create_context() -> RenderContext {
         book: book,
         root: PathBuf::new(),
         config: md_config,
-        destination: PathBuf::new(),
+        destination: temp.path().to_path_buf(),
     };
 
-    render_context
+    (render_context, temp)
 }
 
 #[test]
 fn test_the_entire_process() {
     env_logger::init().ok();
 
-    let ctx = create_context();
+    let (ctx, _temp) = create_context();
 
     macro_rules! unwrap {
             ($thing:expr) => {

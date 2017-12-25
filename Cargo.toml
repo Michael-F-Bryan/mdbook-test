@@ -11,7 +11,6 @@ serde_json = "1.0.8"
 structopt = "0.1.6"
 structopt-derive = "0.1.6"
 mdbook = { git = "https://github.com/Michael-F-Bryan/mdbook", branch = "alternate_backends" }
-tempdir = "0.3.5"
 serde = "1.0.25"
 serde_derive = "1.0.25"
 toml = "0.4.5"
@@ -20,6 +19,9 @@ env_logger = "0.4.3"
 
 [patch.crates-io.pulldown-cmark]
 git = "https://github.com/google/pulldown-cmark"
+
+[dev-dependencies]
+tempdir = "0.3.5"
 
 [build-dependencies]
 cargo = "0.23.0"

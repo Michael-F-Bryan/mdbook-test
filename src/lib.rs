@@ -5,6 +5,7 @@ extern crate mdbook;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
+#[cfg(test)]
 extern crate tempdir;
 extern crate toml;
 
@@ -12,7 +13,6 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
-use tempdir::TempDir;
 use failure::{Error, ResultExt, SyncFailure};
 use mdbook::renderer::RenderContext;
 use mdbook::book::{Book, BookItem};
@@ -46,8 +46,7 @@ pub fn test(ctx: &RenderContext) -> Result<(), Error> {
         }
     }
 
-    let temp = TempDir::new("mdbook-test").context("Unable to create a temporary directory")?;
-    let crate_dir = temp.path();
+    let crate_dir = &ctx.destination;
 
     let crate_name = ctx.config
         .book
@@ -280,6 +279,7 @@ impl Default for Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempdir::TempDir;
     use std::collections::HashSet;
 
     #[test]
