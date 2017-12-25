@@ -4,6 +4,7 @@ extern crate mdbook;
 extern crate mdbook_test;
 extern crate tempdir;
 
+use std::env;
 use std::path::{Path, PathBuf};
 use mdbook::renderer::RenderContext;
 use mdbook::book::{Book, BookItem, Chapter, MDBook};
@@ -82,11 +83,16 @@ fn test_the_entire_process() {
     assert!(p.join("src").join("nested").join("third.md").exists());
 
     // stuff which would usually be generated during testing
-    assert!(p.join("target").exists());
     assert!(p.join("Cargo.lock").exists());
 }
 
 fn test_dir<P: Into<PathBuf>>(book_root: P) -> Result<(), Error> {
+    // we add this to take advantage of caching
+    env::set_var(
+        "CARGO_TARGET_DIR",
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("target"),
+    );
+
     MDBook::load(book_root)
         .map_err(SyncFailure::new)?
         .with_renderer(mdbook_test::TestRenderer)
@@ -102,8 +108,9 @@ fn passing_book_test() {
         .join("tests")
         .join("passing");
 
-    let got = test_dir(&passing);
-    assert!(got.is_ok());
+    if let Err(e) = test_dir(&passing) {
+        panic!("{}", e);
+    }
 }
 
 #[test]

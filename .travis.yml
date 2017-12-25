@@ -3,6 +3,10 @@ language: rust
 services: docker
 sudo: required
 os: linux
+addons:
+  apt:
+    packages:
+      - zlib1g-dev
 env:
   global:
   - CRATE_NAME=mdbook-test
