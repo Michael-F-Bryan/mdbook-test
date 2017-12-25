@@ -20,7 +20,7 @@ fn new_chapter<P: AsRef<Path>>(path: P) -> BookItem {
 }
 
 fn create_context() -> (RenderContext, TempDir) {
-    let temp = TempDir::new("mdbook_test").unwrap();
+    let temp = TempDir::new("mdbook-test").unwrap();
 
     let chapters = vec!["first.md", "second.md", "nested/third.md"];
     let mut book = Book::default();
@@ -52,7 +52,7 @@ fn create_context() -> (RenderContext, TempDir) {
 fn test_the_entire_process() {
     env_logger::init().ok();
 
-    let (ctx, _temp) = create_context();
+    let (ctx, temp) = create_context();
 
     macro_rules! unwrap {
             ($thing:expr) => {
@@ -69,4 +69,19 @@ fn test_the_entire_process() {
         }
 
     unwrap!(mdbook_test::test(&ctx));
+
+    let p = temp.path();
+
+    // make sure the files we generated exist
+    assert!(p.join("Cargo.toml").exists());
+    assert!(p.join("build.rs").exists());
+    assert!(p.join("src").join("lib.rs").exists());
+
+    // plus some chapters
+    assert!(p.join("src").join("first.md").exists());
+    assert!(p.join("src").join("nested").join("third.md").exists());
+
+    // stuff which would usually be generated during testing
+    assert!(p.join("target").exists());
+    assert!(p.join("Cargo.lock").exists());
 }

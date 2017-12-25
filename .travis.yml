@@ -1,0 +1,57 @@
+dist: trusty
+language: rust
+services: docker
+sudo: required
+env:
+  global:
+  - CRATE_NAME=mdbook-test
+  - secure: Ubf9ydiobrde/4h0IxsdVnQAXL1LtrOZ+GTU5TVJxAemZaAYVrsvQ5gWKzuykhvJlpnBVuYnovc1vny+2D1fBnvoccdaCt1rYeJ7KcrfJl5g5C0goU2rZV01EBxEDzrR4RmRIU1lNhVsSADEFt4BUZdO7yZfQWoFKmDQpTkZAWYNE3Rp4SiQJNFEXzrAGqjjMSzzASbds3/h+FUxm/bMUYp9heCuXdYmdFxE4b7Ncoxcv80giV/ZOyKI9h8vx9WQjLpxfkaap6ShkcPiaA6/HUodiNHduxoE+P4kdAOAkK7kCj+8RNWfmfdG7DuFwfLzx+esGq0pKCgbmkov+udztCVf48LpdbCw0n11IU7jc1+yQXlQWpwv3iAh9pS/AkXovPGjwP7om/OwX7LCB23y5vX3tZRNlkoC7hpnHsUCr8jMkCgkWhkhLRbZKkxNo2axICl/x2jyLbOUrbzA6fq2f5zBvLzJM2RNq/2/55yMTdPOwjQtja9QAXF29oFMG59m+dINpJSH30ZsszY+sKmiqHKd4PYJEKJBHHgftMiVTNEHcAeocUvZhKIQs9v6MdAWkw66+GpPnQq/Tqp2JQe02OWGISy2L/9ivk9iEPGhT2kgZ/ZBBTwAK1S5lL09/Fe8S9c5e/nWEuo7eexzlPOApGiahgcLjmhuQBim0iJV3fI=
+matrix:
+  include:
+  - env: TARGET=arm-unknown-linux-gnueabi
+  - env: TARGET=i686-unknown-linux-gnu
+  - env: TARGET=x86_64-unknown-linux-gnu
+  - env: TARGET=x86_64-unknown-linux-musl
+  - env: TARGET=i686-apple-darwin
+    os: osx
+  - env: TARGET=x86_64-apple-darwin
+    os: osx
+  - env: TARGET=i686-unknown-freebsd DISABLE_TESTS=1
+  - env: TARGET=x86_64-unknown-freebsd DISABLE_TESTS=1
+  - env: TARGET=x86_64-unknown-netbsd DISABLE_TESTS=1
+  - env: TARGET=x86_64-unknown-linux-gnu
+    rust: nightly
+  - env: TARGET=x86_64-apple-darwin
+    os: osx
+    rust: nightly
+before_install:
+- set -e
+- rustup self update
+install:
+- sh ci/install.sh
+- source ~/.cargo/env || true
+script:
+- bash ci/script.sh
+after_script: set +e
+before_deploy:
+- sh ci/before_deploy.sh
+deploy:
+  api_key:
+    secure: v7e2dqKmpo0BbQPvL8vZm2kGi4RGPcI8UPS4qlPk4igRcwSjCJag9WasSd8iG+3/xfyOmWuXt5GfqrqM2j5/rJ+nbQU9yOOol7BmnG8pI5quuAv1k9RQaDz1eKveIbmB3284aZc7/Quro8gZxHlrmN6DM7lxi3KDq7raQQXaNZg7a2wtNUQ6tqIhw2VzfeEXL/oxwppS5h1DAcKYuf9nAeoJvpIirJ719ldPX18FelffY+XFc6UIkV839RccaOiNFbuLyrg/4Q3iqcFUQS4snyxCXB7thE5Yb4m3dGLEGks1UpYD9A5C1lSMvLb7GhNW9bSa/F6/z9dvYouJEj2IS4ezeC2smLxHJMR2PHBZf9FDrBjxd6Fz0PRk+BGfb0SV3Qp9h5NBrQNuhQrizrpJU5NzipmkQVruRETlFOy5t1xPDijpRlXA9k8xAVlQU1614b2P01ZjDVfCc8PZbvFHN6lhr0vyORZ/kHOMjojxhUd5wS7RVkXxdI/9vpX1bXVBhYFWOIPbrJ9FAvevLmtTFIIzWjTYcDjCT3BGd6tY/EDzYTOwJNMefvbwtDZOEcNdJwahO42E9ICwCR0w4IJp5UVXhz+91cPibJQ1dO1kCjoF42E7aDzmaP82zocb2uPWvSFOQ704DEhe18y/2cjdcPMDV146/lisPnQ1IWe4Lgw=
+  file_glob: true
+  file: "$CRATE_NAME-$TRAVIS_TAG-$TARGET.*"
+  on:
+    condition: "$TRAVIS_RUST_VERSION = stable"
+    tags: true
+  provider: releases
+  skip_cleanup: true
+cache: cargo
+before_cache:
+- chmod -R a+r $HOME/.cargo
+branches:
+  only:
+  - "/^v\\d+\\.\\d+\\.\\d+.*$/"
+  - master
+notifications:
+  email:
+    on_success: never
