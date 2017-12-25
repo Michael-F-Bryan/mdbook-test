@@ -1,6 +1,6 @@
+extern crate failure;
 #[macro_use]
 extern crate log;
-extern crate failure;
 extern crate mdbook;
 extern crate serde;
 #[macro_use]
@@ -56,7 +56,11 @@ pub fn test(ctx: &RenderContext) -> Result<(), Error> {
         .map(String::as_str)
         .unwrap_or("mdbook_test");
 
-    debug!("Creating test crate ({}) in {}", crate_name, crate_dir.display());
+    debug!(
+        "Creating test crate ({}) in {}",
+        crate_name,
+        crate_dir.display()
+    );
 
     create_crate(crate_dir, crate_name, &cfg)?;
     copy_across_book_chapters(&ctx.book, crate_dir)?;
@@ -70,7 +74,11 @@ fn create_crate(dir: &Path, name: &str, cfg: &Config) -> Result<(), Error> {
     debug!("Initializing crate");
     let mut cmd = Command::new("cargo");
 
-    cmd.arg("init").arg("--lib").arg("--name").arg(name);
+    cmd.arg("init")
+        .arg("--lib")
+        .arg("--name")
+        .arg(name)
+        .env_remove("RUST_LOG");
 
     if cfg.quiet {
         cmd.arg("--quiet");
@@ -127,6 +135,7 @@ fn write_crate_contents(cfg: &Config, book: &Book, dir: &Path) -> Result<(), Err
     build_rs(book, dir.join("build.rs")).context("Unable to generate build.rs")?;
 
     // Make sure we include the skeptic tests
+    debug!("Including `skeptic-tests.rs` in `lib.rs`");
     let mut lib_rs = OpenOptions::new()
         .append(true)
         .open(dir.join("src").join("lib.rs"))
@@ -226,17 +235,23 @@ fn update_cargo_toml(mut value: Table, deps: &[String]) -> Result<Value, Error> 
 }
 
 fn compile_and_test(dir: &Path, cfg: &Config) -> Result<(), Error> {
+    debug!("Compile and test");
+
     let mut cmd = Command::new("cargo");
+    cmd.arg("test").env_remove("RUST_LOG");
 
     if cfg.quiet {
         cmd.arg("--quiet");
     }
 
-    let status = cmd.arg("test")
-        .current_dir(dir)
+    let status = cmd.current_dir(dir)
         .stdin(Stdio::null())
         .status()
         .context("Unable to invoke cargo")?;
+
+    if let Some(code) = status.code() {
+        debug!("Tests ran with return code {}", code);
+    }
 
     if !status.success() {
         Err(failure::err_msg("The tests failed"))

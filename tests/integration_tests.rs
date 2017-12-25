@@ -1,5 +1,5 @@
-extern crate mdbook;
 extern crate env_logger;
+extern crate mdbook;
 extern crate mdbook_test;
 
 use std::path::{Path, PathBuf};
@@ -41,7 +41,7 @@ fn create_context() -> RenderContext {
         destination: PathBuf::new(),
     };
 
-    render_context 
+    render_context
 }
 
 #[test]
