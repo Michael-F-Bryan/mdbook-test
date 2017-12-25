@@ -36,6 +36,30 @@ pub const MDBOOK_VERSION: &'static str = env!("MDBOOK_VERSION");
 pub fn test(ctx: &RenderContext) -> Result<(), Error> {
     info!("Starting Test");
 
+    let crate_dir = &ctx.destination;
+
+    let cfg = parse_config(ctx)?;
+    let crate_name = sanitize_crate_name(ctx);
+
+    debug!(
+        "Creating test crate ({}) in {}",
+        crate_name,
+        crate_dir.display()
+    );
+
+    // there's no need to re-init if we ran previously
+    if !crate_dir.join("Cargo.toml").exists() {
+        create_crate(crate_dir, &crate_name, &cfg)?;
+    }
+
+    copy_across_book_chapters(&ctx.book, crate_dir)?;
+    write_crate_contents(&cfg, &ctx.book, crate_dir)?;
+    compile_and_test(crate_dir, &cfg)?;
+
+    Ok(())
+}
+
+fn parse_config(ctx: &RenderContext) -> Result<Config, Error> {
     let cfg = match ctx.config.get("output.test") {
         Some(raw) => raw.clone().try_into()?,
         None => Config::default(),
@@ -47,33 +71,19 @@ pub fn test(ctx: &RenderContext) -> Result<(), Error> {
         }
     }
 
-    let crate_dir = &ctx.destination;
+    Ok(cfg)
+}
 
-    let crate_name = ctx.config
+fn sanitize_crate_name(ctx: &RenderContext) -> String {
+    ctx.config
         .book
         .title
         .as_ref()
         .map(String::as_str)
-        .unwrap_or("mdbook_test")
+        .unwrap_or("test_crate")
         .to_lowercase()
         .replace(" ", "_")
-        .replace("-", "_");
-
-    debug!(
-        "Creating test crate ({}) in {}",
-        crate_name,
-        crate_dir.display()
-    );
-
-    if !crate_dir.exists() {
-        create_crate(crate_dir, &crate_name, &cfg)?;
-    }
-
-    copy_across_book_chapters(&ctx.book, crate_dir)?;
-    write_crate_contents(&cfg, &ctx.book, crate_dir)?;
-    compile_and_test(crate_dir, &cfg)?;
-
-    Ok(())
+        .replace("-", "_")
 }
 
 fn create_crate(dir: &Path, name: &str, cfg: &Config) -> Result<(), Error> {
@@ -140,7 +150,6 @@ fn write_crate_contents(cfg: &Config, book: &Book, dir: &Path) -> Result<(), Err
     debug!("Writing build.rs");
     build_rs(book, dir.join("build.rs")).context("Unable to generate build.rs")?;
 
-    // Make sure we include the skeptic tests
     debug!("Including `skeptic-tests.rs` in `lib.rs`");
     let mut lib_rs = File::create(dir.join("src").join("lib.rs")).context("Unable to open lib.rs")?;
 

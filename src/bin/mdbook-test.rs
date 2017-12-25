@@ -1,6 +1,5 @@
 extern crate env_logger;
 extern crate failure;
-extern crate log;
 extern crate mdbook;
 extern crate mdbook_test;
 extern crate pulldown_cmark;

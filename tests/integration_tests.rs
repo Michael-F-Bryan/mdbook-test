@@ -52,8 +52,6 @@ fn create_context() -> (RenderContext, TempDir) {
 
 #[test]
 fn test_the_entire_process() {
-    env_logger::init().ok();
-
     let (ctx, temp) = create_context();
 
     macro_rules! unwrap {
