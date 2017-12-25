@@ -1,0 +1,8 @@
+[book]
+title = "Passing"
+authors = []
+multilingual = false
+src = "src"
+
+[output.test]
+quiet = false

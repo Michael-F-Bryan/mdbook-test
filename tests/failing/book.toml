@@ -1,0 +1,8 @@
+[book]
+title = "Failing"
+authors = []
+multilingual = false
+src = "src"
+
+[output.test]
+quiet = false

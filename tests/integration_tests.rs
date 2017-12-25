@@ -1,14 +1,16 @@
 extern crate env_logger;
-extern crate tempdir;
+extern crate failure;
 extern crate mdbook;
 extern crate mdbook_test;
+extern crate tempdir;
 
 use std::path::{Path, PathBuf};
 use mdbook::renderer::RenderContext;
-use mdbook::book::{Book, BookItem, Chapter};
+use mdbook::book::{Book, BookItem, Chapter, MDBook};
 use mdbook::config::Config as MdConfig;
 use mdbook_test::Config;
 use tempdir::TempDir;
+use failure::{Error, SyncFailure};
 
 fn new_chapter<P: AsRef<Path>>(path: P) -> BookItem {
     let path = path.as_ref();
@@ -84,4 +86,35 @@ fn test_the_entire_process() {
     // stuff which would usually be generated during testing
     assert!(p.join("target").exists());
     assert!(p.join("Cargo.lock").exists());
+}
+
+fn test_dir<P: Into<PathBuf>>(book_root: P) -> Result<(), Error> {
+    MDBook::load(book_root)
+        .map_err(SyncFailure::new)?
+        .with_renderer(mdbook_test::TestRenderer)
+        .build()
+        .map_err(SyncFailure::new)?;
+
+    Ok(())
+}
+
+#[test]
+fn passing_book_test() {
+    let passing = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("passing");
+
+    let got = test_dir(&passing);
+    assert!(got.is_ok());
+}
+
+#[test]
+fn failing_book_test() {
+    let failing = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("failing");
+
+    let got = test_dir(&failing);
+
+    assert!(got.is_err());
 }

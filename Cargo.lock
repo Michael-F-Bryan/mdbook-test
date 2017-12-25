@@ -736,7 +736,7 @@ dependencies = [
  "cargo 0.23.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.4.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "failure 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "log 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log 0.3.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "mdbook 0.0.29-alpha.0 (git+https://github.com/Michael-F-Bryan/mdbook?branch=alternate_backends)",
  "pulldown-cmark 0.1.0 (git+https://github.com/google/pulldown-cmark)",
  "serde 1.0.25 (registry+https://github.com/rust-lang/crates.io-index)",

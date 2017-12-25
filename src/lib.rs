@@ -11,11 +11,11 @@ extern crate toml;
 
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, File};
 use std::io::{Read, Write};
-use failure::{Error, ResultExt, SyncFailure};
-use mdbook::renderer::RenderContext;
-use mdbook::book::{Book, BookItem};
+use failure::{Error, ResultExt};
+use mdbook::renderer::{RenderContext, Renderer};
+use mdbook::book::{Book, BookItem, MDBook};
 use toml::value::{Table, Value};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -36,11 +36,12 @@ pub const MDBOOK_VERSION: &'static str = env!("MDBOOK_VERSION");
 pub fn test(ctx: &RenderContext) -> Result<(), Error> {
     info!("Starting Test");
 
-    let cfg: Config = ctx.config
-        .get_deserialized("output.test")
-        .map_err(SyncFailure::new)?;
+    let cfg = match ctx.config.get("output.test") {
+        Some(raw) => raw.clone().try_into()?,
+        None => Config::default(),
+    };
 
-    if log_enabled!(::log::Level::Debug) {
+    if log_enabled!(::log::LogLevel::Debug) {
         for line in format!("{:#?}", cfg).lines() {
             debug!("{}", line);
         }
@@ -53,7 +54,10 @@ pub fn test(ctx: &RenderContext) -> Result<(), Error> {
         .title
         .as_ref()
         .map(String::as_str)
-        .unwrap_or("mdbook_test");
+        .unwrap_or("mdbook_test")
+        .to_lowercase()
+        .replace(" ", "_")
+        .replace("-", "_");
 
     debug!(
         "Creating test crate ({}) in {}",
@@ -61,7 +65,10 @@ pub fn test(ctx: &RenderContext) -> Result<(), Error> {
         crate_dir.display()
     );
 
-    create_crate(crate_dir, crate_name, &cfg)?;
+    if !crate_dir.exists() {
+        create_crate(crate_dir, &crate_name, &cfg)?;
+    }
+
     copy_across_book_chapters(&ctx.book, crate_dir)?;
     write_crate_contents(&cfg, &ctx.book, crate_dir)?;
     compile_and_test(crate_dir, &cfg)?;
@@ -135,14 +142,12 @@ fn write_crate_contents(cfg: &Config, book: &Book, dir: &Path) -> Result<(), Err
 
     // Make sure we include the skeptic tests
     debug!("Including `skeptic-tests.rs` in `lib.rs`");
-    let mut lib_rs = OpenOptions::new()
-        .append(true)
-        .open(dir.join("src").join("lib.rs"))
-        .context("Unable to open lib.rs")?;
+    let mut lib_rs = File::create(dir.join("src").join("lib.rs")).context("Unable to open lib.rs")?;
+
     writeln!(
         lib_rs,
         r#"#[cfg(test)] include!(concat!(env!("OUT_DIR"), "/skeptic-tests.rs"));"#
-    )?;
+    ).context("Couldn't write to lib.rs")?;
 
     Ok(())
 }
@@ -234,7 +239,7 @@ fn update_cargo_toml(mut value: Table, deps: &[String]) -> Result<Value, Error> 
 }
 
 fn compile_and_test(dir: &Path, cfg: &Config) -> Result<(), Error> {
-    debug!("Compile and test");
+    debug!("Compile and test ({})", dir.display());
 
     let mut cmd = Command::new("cargo");
     cmd.arg("test").env_remove("RUST_LOG");
@@ -272,6 +277,39 @@ impl Default for Config {
         Config {
             dependencies: Vec::new(),
             quiet: true,
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, Default)]
+pub struct TestRenderer;
+
+impl Renderer for TestRenderer {
+    fn name(&self) -> &str {
+        "test_renderer"
+    }
+
+    fn render(&self, md: &MDBook) -> Result<(), mdbook::errors::Error> {
+        let root = md.root.clone();
+        let dest = root.join(&md.config.build.build_dir);
+
+        let ctx = RenderContext {
+            version: MDBOOK_VERSION.to_string(),
+            book: md.book.clone(),
+            config: md.config.clone(),
+            destination: dest,
+            root: root,
+        };
+
+        if let Err(e) = test(&ctx) {
+            warn!("Error: {}", e);
+            for cause in e.causes().skip(1) {
+                warn!("\tCaused By: {}", cause);
+            }
+
+            Err(format!("Testing Failed, {}", e).into())
+        } else {
+            Ok(())
         }
     }
 }
