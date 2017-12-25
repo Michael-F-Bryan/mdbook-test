@@ -31,7 +31,7 @@ fn create_context() -> (RenderContext, TempDir) {
 
     let cfg = Config {
         dependencies: Vec::new(),
-        quiet: true,
+        quiet: option_env!("CRATE_NAME").is_none(), // print output only for CI
     };
 
     let mut md_config = MdConfig::default();

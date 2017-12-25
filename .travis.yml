@@ -2,6 +2,7 @@ dist: trusty
 language: rust
 services: docker
 sudo: required
+os: linux
 env:
   global:
   - CRATE_NAME=mdbook-test
