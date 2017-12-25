@@ -15,6 +15,8 @@ tempdir = "0.3.5"
 serde = "1.0.25"
 serde_derive = "1.0.25"
 toml = "0.4.5"
+log = "0.4.0"
+env_logger = "0.4.3"
 
 [patch.crates-io.pulldown-cmark]
 git = "https://github.com/google/pulldown-cmark"

@@ -40,7 +40,8 @@ fn run(args: &Args) -> Result<(), Error> {
     // or by instrumenting MDBook directly (in standalone mode).
     let ctx: RenderContext = if args.standalone {
         let md = MDBook::load(&args.root).map_err(SyncFailure::new)?;
-        RenderContext::new(md.root, md.book, md.config)
+        let build_dir = md.config.build.build_dir.clone();
+        RenderContext::new(md.root, md.book, md.config, build_dir)
     } else {
         serde_json::from_reader(io::stdin()).context("Unable to parse RenderContext")?
     };

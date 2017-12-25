@@ -1,3 +1,5 @@
+#[macro_use]
+extern crate log;
 extern crate failure;
 extern crate mdbook;
 extern crate serde;
@@ -8,7 +10,7 @@ extern crate toml;
 
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use tempdir::TempDir;
 use failure::{Error, ResultExt, SyncFailure};
@@ -32,9 +34,17 @@ pub const MDBOOK_VERSION: &'static str = env!("MDBOOK_VERSION");
 ///
 /// [rust-skeptic]: https://github.com/budziq/rust-skeptic
 pub fn test(ctx: &RenderContext) -> Result<(), Error> {
+    info!("Starting Test");
+
     let cfg: Config = ctx.config
         .get_deserialized("output.test")
         .map_err(SyncFailure::new)?;
+
+    if log_enabled!(::log::Level::Debug) {
+        for line in format!("{:#?}", cfg).lines() {
+            debug!("{}", line);
+        }
+    }
 
     let temp = TempDir::new("mdbook-test").context("Unable to create a temporary directory")?;
     let crate_dir = temp.path();
@@ -46,22 +56,27 @@ pub fn test(ctx: &RenderContext) -> Result<(), Error> {
         .map(String::as_str)
         .unwrap_or("mdbook_test");
 
-    create_crate(crate_dir, crate_name)?;
+    debug!("Creating test crate ({}) in {}", crate_name, crate_dir.display());
+
+    create_crate(crate_dir, crate_name, &cfg)?;
     copy_across_book_chapters(&ctx.book, crate_dir)?;
-    generate_configuration(&cfg, crate_dir)?;
-    compile_and_test(crate_dir)?;
+    write_crate_contents(&cfg, &ctx.book, crate_dir)?;
+    compile_and_test(crate_dir, &cfg)?;
 
     Ok(())
 }
 
-fn create_crate(dir: &Path, name: &str) -> Result<(), Error> {
-    let status = Command::new("cargo")
-        .arg("init")
-        .arg("--lib")
-        .arg("--quiet")
-        .arg("--name")
-        .arg(name)
-        .arg(dir)
+fn create_crate(dir: &Path, name: &str, cfg: &Config) -> Result<(), Error> {
+    debug!("Initializing crate");
+    let mut cmd = Command::new("cargo");
+
+    cmd.arg("init").arg("--lib").arg("--name").arg(name);
+
+    if cfg.quiet {
+        cmd.arg("--quiet");
+    }
+
+    let status = cmd.arg(dir)
         .stdin(Stdio::null())
         .status()
         .context("Unable to invoke cargo")?;
@@ -74,6 +89,7 @@ fn create_crate(dir: &Path, name: &str) -> Result<(), Error> {
 }
 
 fn copy_across_book_chapters(book: &Book, dir: &Path) -> Result<(), Error> {
+    debug!("Copying across book chapters");
     let src = dir.join("src");
 
     let chapters = book.sections.iter().filter_map(|b| match *b {
@@ -82,6 +98,7 @@ fn copy_across_book_chapters(book: &Book, dir: &Path) -> Result<(), Error> {
     });
 
     for ch in chapters {
+        debug!("Copying across {} ({})", ch.name, ch.path.display());
         let filename = src.join(&ch.path);
 
         if let Some(parent) = filename.parent() {
@@ -98,33 +115,51 @@ fn copy_across_book_chapters(book: &Book, dir: &Path) -> Result<(), Error> {
 
 /// Generates the `build.rs` build script and adds the dependencies to
 /// `Cargo.toml`.
-fn generate_configuration(cfg: &Config, dir: &Path) -> Result<(), Error> {
+fn write_crate_contents(cfg: &Config, book: &Book, dir: &Path) -> Result<(), Error> {
+    debug!("Updating Cargo.toml");
     let cargo_toml_path = dir.join("Cargo.toml");
 
     let cargo_toml = load_toml(&cargo_toml_path)?;
     let updated_cargo_toml = update_cargo_toml(cargo_toml, &cfg.dependencies)?;
     dump_toml(&updated_cargo_toml, &cargo_toml_path)?;
 
-    build_rs(cfg, dir.join("build.rs"))
-        .context("Unable to generate build.rs")?;
+    debug!("Writing build.rs");
+    build_rs(book, dir.join("build.rs")).context("Unable to generate build.rs")?;
+
+    // Make sure we include the skeptic tests
+    let mut lib_rs = OpenOptions::new()
+        .append(true)
+        .open(dir.join("src").join("lib.rs"))
+        .context("Unable to open lib.rs")?;
+    writeln!(
+        lib_rs,
+        r#"#[cfg(test)] include!(concat!(env!("OUT_DIR"), "/skeptic-tests.rs"));"#
+    )?;
 
     Ok(())
 }
 
-fn build_rs<P: AsRef<Path>>(cfg: &Config, filename: P) -> Result<(), Error> {
+fn build_rs<P: AsRef<Path>>(book: &Book, filename: P) -> Result<(), Error> {
     let mut f = File::create(filename)?;
 
     let template = include_str!("build_template.rs");
 
-    let dependency_list = cfg.dependencies.iter()
-        .map(|dep| format!("\"{}\"", dep))
+    let src = Path::new("src");
+
+    let chapters = book.iter()
+        .filter_map(|it| match *it {
+            BookItem::Chapter(ref ch) => Some(ch),
+            _ => None,
+        })
+        .map(|ch| src.join(&ch.path).display().to_string())
+        .map(|ch| format!("\"{}\"", ch))
         .collect::<Vec<_>>()
         .join(", ");
 
-    let content = template.replace("$DEPS", &dependency_list);
+    let content = template.replace("$DEPS", &chapters);
 
     f.write_all(content.as_bytes())?;
-    
+
     Ok(())
 }
 
@@ -153,12 +188,20 @@ fn load_toml<P: AsRef<Path>, D: DeserializeOwned>(filename: P) -> Result<D, Erro
 }
 
 fn update_cargo_toml(mut value: Table, deps: &[String]) -> Result<Value, Error> {
+    // TODO: pull this out into a helper function
     value
         .entry("package".to_string())
         .or_insert_with(|| Value::Table(Table::new()))
         .as_table_mut()
         .expect("unreachable")
         .insert(String::from("build"), "build.rs".into());
+
+    value
+        .entry("dev-dependencies".to_string())
+        .or_insert_with(|| Value::Table(Table::new()))
+        .as_table_mut()
+        .expect("unreachable")
+        .insert(String::from("skeptic"), "*".into());
 
     value
         .entry("build-dependencies".to_string())
@@ -182,10 +225,14 @@ fn update_cargo_toml(mut value: Table, deps: &[String]) -> Result<Value, Error> 
     Ok(Value::Table(value))
 }
 
-fn compile_and_test(dir: &Path) -> Result<(), Error> {
-    let status = Command::new("cargo")
-        .arg("test")
-        .arg("--quiet")
+fn compile_and_test(dir: &Path, cfg: &Config) -> Result<(), Error> {
+    let mut cmd = Command::new("cargo");
+
+    if cfg.quiet {
+        cmd.arg("--quiet");
+    }
+
+    let status = cmd.arg("test")
         .current_dir(dir)
         .stdin(Stdio::null())
         .status()
@@ -199,17 +246,26 @@ fn compile_and_test(dir: &Path) -> Result<(), Error> {
 }
 
 /// The configuration struct loaded from the `output.test` table.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "kebab-case")]
 pub struct Config {
     pub dependencies: Vec<String>,
+    pub quiet: bool,
+}
+
+impl Default for Config {
+    fn default() -> Config {
+        Config {
+            dependencies: Vec::new(),
+            quiet: true,
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::HashSet;
-    use mdbook::book::{Book, Chapter};
 
     #[test]
     fn create_the_test_crate() {
@@ -219,7 +275,7 @@ mod tests {
         let cargo_toml = temp.path().join("Cargo.toml");
 
         assert!(!cargo_toml.exists());
-        create_crate(temp.path(), name).unwrap();
+        create_crate(temp.path(), name, &Default::default()).unwrap();
         assert!(cargo_toml.exists());
     }
 
@@ -264,58 +320,5 @@ mod tests {
         for dep in &deps {
             assert!(got_deps.contains(dep));
         }
-    }
-
-    fn new_chapter<P: AsRef<Path>>(path: P) -> BookItem {
-        let path = path.as_ref();
-        let filename = path.file_name().and_then(|p| p.to_str()).unwrap();
-
-        let ch = Chapter::new(filename, String::new(), path);
-
-        BookItem::Chapter(ch)
-    }
-
-    #[test]
-    fn test_the_entire_process() {
-        let temp = TempDir::new("mdbook-test").unwrap();
-
-        let chapters = vec!["first.md", "second.md", "nested/third.md"];
-        let mut book = Book::default();
-
-        for ch in &chapters {
-            book.sections.push(new_chapter(ch));
-        }
-
-        let cfg = Config {
-            // dependencies: vec![String::from("bitflags")],
-            dependencies: Vec::new(),
-        };
-
-        macro_rules! unwrap {
-            ($thing:expr) => {
-                if let Err(e) = $thing {
-                    println!("Error: {}", e);
-
-                    for cause in e.causes().skip(1) {
-                        println!("\tCaused By: {}", cause);
-                    }
-
-                    panic!();
-                }
-            };
-        }
-
-        unwrap!(create_crate(temp.path(), "mdbook-test"));
-        unwrap!(copy_across_book_chapters(&book, temp.path()));
-        unwrap!(generate_configuration(&cfg, temp.path()));
-        unwrap!(compile_and_test(temp.path()));
-
-        let p = temp.path();
-        assert!(p.join("Cargo.toml").exists());
-        assert!(p.join("build.rs").exists());
-
-        assert!(p.join("src").join("first.md").exists());
-        assert!(p.join("src").join("second.md").exists());
-        assert!(p.join("src").join("nested/third.md").exists());
     }
 }
